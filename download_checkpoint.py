@@ -28,8 +28,8 @@ def download_files(file_list):
 
 if __name__ == "__main__":
     files_to_download = [
-        ("https://drive.google.com/uc?id=your_file_id_1", "saved/model_best.pth"),
-        ("https://drive.google.com/uc?id=your_file_id_2", "saved/config.yaml") 
+        ("https://drive.google.com/file/d/1yyPfX0TpaeTLvKQVJsblJcyxTquBWEM_/view?usp=drive_link", "saved/model_best.pth"),
+        ("https://drive.google.com/file/d/1_81btPmePUKCu5OH5a3dtsRykkuC6r1i/view?usp=drive_link", "saved/config.yaml") 
     ]
 
     download_files(files_to_download)
