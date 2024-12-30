@@ -70,7 +70,7 @@ python3 inference.py
 
 ## Credits
 
-This repository is based on a [PyTorch Project Template](https://github.com/Blinorot/pytorch_project_template).
+This repository is based on https://github.com/Blinorot/pytorch_project_template/tree/example/asr
 
 ## License
 
