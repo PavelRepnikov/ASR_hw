@@ -10,7 +10,7 @@
 
 ## About
 
-This repository contains a HW by Repnikov Pavel, an illiteraate monkey.
+This repository contains a HW by Repnikov Pavel, an illiterate monkey.
 
 ## Installation
 
