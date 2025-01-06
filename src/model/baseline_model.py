@@ -36,6 +36,8 @@ class BaselineModel(nn.Module):
             output (dict): output dict containing log_probs and
                 transformed lengths.
         """
+        spectrogram = spectrogram.squeeze(1)
+        # print("spectrogram shape after squeeze:", spectrogram.shape)
         output = self.net(spectrogram.transpose(1, 2))
         log_probs = nn.functional.log_softmax(output, dim=-1)
         log_probs_length = self.transform_input_lengths(spectrogram_length)

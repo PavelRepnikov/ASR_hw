@@ -1,0 +1,37 @@
+defaults:
+  - model: deepspeech
+  - writer: wandb-7
+  - metrics: example
+  - datasets: onebatchtest
+  - dataloader: example
+  - transforms: example
+  - _self_
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 1e-2
+lr_scheduler: 
+  _target_: torch.optim.lr_scheduler.OneCycleLR
+  max_lr: 0.00003
+  pct_start: 0.1
+  steps_per_epoch: ${trainer.epoch_len}
+  epochs: ${trainer.n_epochs}
+  anneal_strategy: cos
+loss_function:
+  _target_: src.loss.CTCLossWrapper
+text_encoder:
+  _target_: src.text_encoder.CTCTextEncoder
+trainer:
+  log_step: 100
+  n_epochs: 1000
+  epoch_len: 200 
+  device_tensors: ["spectrogram", "text_encoded"] # which tensors should be on device (ex. GPU)
+  resume_from: Null
+  # device: cuda
+  device: cuda:1 # device name or "auto"
+  # device: cpu
+  override: True # if True, will override the previous run with the same name
+  monitor: "min val_WER_(Argmax)" # "off" or "max/min metric_name", i.e. our goal is to maximize/minimize metric
+  save_period: 5 # checkpoint each save_period epochs in addition to the best epoch
+  early_stop: ${trainer.n_epochs} # epochs for early stopping
+  save_dir: "saved"
+  seed: 42

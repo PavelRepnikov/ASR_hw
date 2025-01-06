@@ -53,8 +53,10 @@ def collate_fn(dataset_items: List[Dict]):
     # print(f"Padded spectrogram shape: {padded_spectrogram.shape}")
 
     spectrogram_lengths = torch.tensor([item.size(-1) for item in spectrogram], dtype=torch.long)
-    padded_spectrogram = padded_spectrogram[:, :, :128, 0]
-    
+    # padded_spectrogram = padded_spectrogram[:, :, :128, 0]
+    padded_spectrogram = padded_spectrogram[:, :, :128, :]
+
+
     result_batch = {
         'audio': padded_audio,
         'spectrogram': padded_spectrogram,

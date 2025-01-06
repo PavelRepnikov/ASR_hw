@@ -59,28 +59,36 @@ class CTCTextEncoder:
 
     def ctc_decode(self, inds) -> str:
         """
-        Decode a sequence of CTC model outputs (indices) into text by removing 
-        blank tokens and merging repeated characters.
+        Decodes a sequence of indices using the CTC decoding rules.
 
         Args:
-            inds (list): List of predicted token indices, including blank tokens.
-        
+            inds (list): list of tokens (indices).
+
         Returns:
-            str: The decoded text with blank tokens removed and repeated characters merged.
+            decoded_text (str): text after applying CTC decoding rules.
         """
-        # Remove blank tokens (index 0 corresponds to blank token)
-        inds = [ind for ind in inds if ind != 0]
+        print(f"[DEBUG] Input indices: {inds}")
 
-        # Merge repeated characters
-        decoded_text = []
-        prev_char = None
-        for ind in inds:
-            char = self.ind2char[ind]
-            if char != prev_char:
-                decoded_text.append(char)
-            prev_char = char
+        decoded = []
+        previous_token = None
 
-        return ''.join(decoded_text).strip()
+        for token in inds:
+            if token not in self.ind2char:
+                print(f"[WARNING] Token {token} is out of range.")
+                continue
+
+            char = self.ind2char[int(token)]
+
+            if char != self.EMPTY_TOK and char != previous_token:
+                decoded.append(char)
+
+            previous_token = char
+
+        decoded_text = "".join(decoded).strip()
+        print(f"[DEBUG] Decoded text: {decoded_text}")
+        return decoded_text
+
+
 
 
     @staticmethod

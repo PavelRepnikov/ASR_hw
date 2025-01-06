@@ -2,81 +2,51 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class DeepSpeech(nn.Module):
-    def __init__(self, num_classes, input_dim=13, hidden_dim=1024, num_gru_layers=5, dropout=0.1, n_tokens=None):
-        super(DeepSpeech, self).__init__()
+class DeepSpeech2(nn.Module):
+    def __init__(self, num_classes, input_dim=128, hidden_dim=1024, num_gru_layers=5, dropout=0.1, n_tokens=None):
+        super(DeepSpeech2, self).__init__()
 
-        self.n_tokens = n_tokens
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-        self.num_gru_layers = num_gru_layers
-        self.num_classes = num_classes
+        # Define the layers of the model
+        self.rnn = nn.ModuleList()
+        for _ in range(num_gru_layers):
+            input_size = input_dim if _ == 0 else hidden_dim * 2  # First GRU layer takes input_dim (128), subsequent layers take hidden_dim * 2
+            self.rnn.append(nn.GRU(input_size, hidden_dim, batch_first=True, dropout=dropout, bidirectional=True))
 
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+        # Fully connected layer to transform hidden states to output classes
+        self.fc = nn.Linear(hidden_dim * 2, num_classes)
 
-        # self.gru = nn.GRU(input_size=128, hidden_size=hidden_dim, num_layers=num_gru_layers, batch_first=True, dropout=dropout, bidirectional=True)
-        self.gru = nn.GRU(input_size=128, hidden_size=hidden_dim, num_layers=num_gru_layers, batch_first=True, dropout=dropout, bidirectional=False)
-        self.fc = nn.Linear(hidden_dim, num_classes)  # Bidirectional GRU outputs twice the hidden size
+        # Batch normalization (for feature dimension)
+        self.batch_norm = nn.BatchNorm1d(hidden_dim * 2)
 
-        # Dropout layer
-        self.dropout = nn.Dropout(dropout)
-    
+    def forward(self, **batch):
+        # Extract spectrogram input and batch-related data from keyword arguments
+        x = batch["spectrogram"]  # Shape: [batch_size, channels, freq_bins, time_steps]
 
-    def forward(self, audio=None, spectrogram=None, input_lengths=None, **kwargs):
+        # Permute to match expected shape: [batch_size, time_steps, freq_bins]
+        x = x.permute(0, 3, 2, 1).contiguous()  # Shape: [batch_size, time_steps, freq_bins, channels]
+        x = x.squeeze(-1)  # Remove the channels dimension, shape: [batch_size, time_steps, freq_bins]
 
-        device = next(self.parameters()).device
+        # Pass through each GRU layer
+        for gru_layer in self.rnn:
+            x, _ = gru_layer(x)
 
-        if audio is not None:
-            if audio.dim() == 2:
-                audio = audio.unsqueeze(1)
-            elif audio.dim() == 3:
-                audio = audio.unsqueeze(1)
-            x = audio
-        elif spectrogram is not None:
-            if spectrogram.dim() == 3:
-                spectrogram = spectrogram.unsqueeze(1)
-            x = spectrogram
-        else:
-            raise ValueError("Either 'audio' or 'spectrogram' must be provided.")
-        
-        x = x.to(device)
+        # Apply batch normalization over the feature dimension (hidden_dim * 2)
+        x = x.reshape(-1, x.size(2))  # Flatten to shape [batch_size * time_steps, hidden_dim * 2]
+        x = self.batch_norm(x)  # Apply batch normalization
 
-        x = F.relu(self.conv1(x))
-        # print(f"Shape after conv1: {x.shape}")
+        # Reshape back to [batch_size, time_steps, hidden_dim * 2]
+        x = x.reshape(batch["spectrogram"].size(0), -1, x.size(1))
 
-        x = F.relu(self.conv2(x))
-        # print(f"Shape after conv2: {x.shape}")
-
-        x = F.relu(self.conv3(x))
-        
-        x = x.squeeze(1)
-        # print(f"Shape after squeeze: {x.shape}")
-
-        if x.dim() == 4:
-            x = x.squeeze(2)
-        if x.dim() == 3:
-            x = x.permute(0, 2, 1)
-        # print(f"Shape of tensor before GRU: {x.shape}")
-
-        if not x.is_contiguous():
-            # print("Tensor is not contiguous before GRU. Forcing contiguity.")
-            x = x.contiguous()
-
-        # Reset hidden state for GRU at the start of each forward pass
-        h0 = torch.zeros(self.num_gru_layers, x.size(0), self.hidden_dim).to(x.device)  # Move h0 to the correct device
-
-        x, _ = self.gru(x, h0)
-
-        x = self.dropout(x)
-
+        # Pass through fully connected layer
         x = self.fc(x)
 
+        # Calculate log probabilities (for training with CTC or other loss functions)
         log_probs = F.log_softmax(x, dim=-1)
-        
-        input_lengths = self.calculate_sequence_lengths(x)
 
+        # Calculate input lengths (assuming no padding in the time dimension)
+        input_lengths = torch.full((x.size(0),), x.size(1), dtype=torch.int32)
+        # print("input_lengths:", input_lengths)
+        # Return output as a dictionary with log_probs and input_lengths
         output = {
             "log_probs": log_probs,
             "log_probs_length": input_lengths
@@ -84,34 +54,7 @@ class DeepSpeech(nn.Module):
 
         return output
 
-    def calculate_sequence_lengths(self, x):
-        """
-        Compute the length of each sequence in the batch.
-        This is done by counting non-padding elements along the time dimension.
-        """
-        sequence_lengths = (x != 0).sum(dim=1)
-        
-        return sequence_lengths
 
-    # In your loss computation function
-    def compute_ctc_loss(self, log_probs, targets, input_lengths, target_lengths):
-        # print("Log probs shape:", log_probs.shape)
-        # print("Targets shape:", targets.shape)
-        # print("Input lengths shape:", input_lengths.shape)
-        # print("Target lengths shape:", target_lengths.shape)
-        
-        assert input_lengths.dim() == 1 and input_lengths.size(0) == log_probs.size(0), \
-            f"Expected input_lengths of shape [batch_size], but got {input_lengths.shape} for batch size {log_probs.size(0)}"
-
-        log_probs = log_probs.permute(1, 0, 2)
-        # print("Permuted log_probs shape:", log_probs.shape)
-
-        ctc_loss = nn.CTCLoss(blank=0, zero_infinity=True)
-        loss = ctc_loss(log_probs, targets, input_lengths, target_lengths)
-        
-        # print("CTC Loss:", loss.item())
-        
-        return loss
 
     def __str__(self):
         """

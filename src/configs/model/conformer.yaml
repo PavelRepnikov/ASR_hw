@@ -2,11 +2,11 @@
 # n_feats: 128
 # fc_hidden: 512
 _target_: src.model.conformer.Conformer
-num_blocks: 16  # Number of Conformer blocks
-d_model: 256  # Dimension of model embeddings
+num_blocks: 4  # Number of Conformer blocks
+d_model: 16  # Dimension of model embeddings
 n_heads: 8  # Number of attention heads
-kernel_size: 32  # Kernel size for convolution module
-ff_expansion_factor: 4  # Expansion factor in feed-forward module
+kernel_size: 4  # Kernel size for convolution module
+ff_expansion_factor: 2  # Expansion factor in feed-forward module
 conv_expansion_factor: 2  # Expansion factor in convolution module
 dropout: 0.1  # Dropout rate
 num_classes: 29  # Number of output classes
