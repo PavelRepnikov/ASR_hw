@@ -25,13 +25,10 @@ Follow these steps to install the project:
 
    ```bash
    # create env
-   ~/.pyenv/versions/PYTHON_VERSION/bin/python3 -m venv project_env
-
-   # alternatively, using default python version
-   python3 -m venv project_env
+   conda create -n check python=3.10
 
    # activate env
-   source project_env
+   conda activate check
    ```
 
 2. Install all required packages
