@@ -12,7 +12,7 @@ from src.utils.init_utils import set_random_seed, setup_saving_and_logging
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-@hydra.main(version_base=None, config_path="src/configs", config_name="config-5")
+@hydra.main(version_base=None, config_path="src/configs", config_name="config-4")
 def main(config):
     """
     Main script for training. Instantiates the model, optimizer, scheduler,
@@ -23,15 +23,20 @@ def main(config):
         config (DictConfig): hydra experiment config.
     """
     set_random_seed(config.trainer.seed)
-    # torch.backends.cudnn.enabled = False
+
     project_config = OmegaConf.to_container(config)
     logger = setup_saving_and_logging(config)
     writer = instantiate(config.writer, logger, project_config)
 
     if config.trainer.device == "auto":
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            device = "cuda"
+        else:
+            device = "cpu"
     else:
         device = config.trainer.device
+
+    logger.info(f"Using device: {device}")
 
     # setup text_encoder
     text_encoder = instantiate(config.text_encoder)
@@ -42,12 +47,6 @@ def main(config):
 
     # build model architecture, then print to console
     model = instantiate(config.model, n_tokens=len(text_encoder)).to(device)
-
-    # # Check if we have more than one GPU and use DataParallel if available
-    # if torch.cuda.device_count() > 1:
-    #     print(f"Using {torch.cuda.device_count()} GPUs!")
-    #     model = torch.nn.DataParallel(model)  # Wrap model for multi-GPU support
-
     logger.info(model)
 
     # get function handles of loss and metrics

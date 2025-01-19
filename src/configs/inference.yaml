@@ -1,27 +1,17 @@
 defaults:
-  - model: conformer
-  - metrics: example
-  - datasets: example1inf
-  - dataloader: example
-  - transforms: example
+  - model: deepspeech2
+  - metrics: inference_metrics
+  - datasets: inference
+  - dataloader: default
+  - transforms: inference
   - _self_
-inferencer:
-  device_tensors: ["audio", "spectrogram", "text_encoded", "text_encoded_length", "spectrogram_length"]
-  device: cuda
-  save_path: "example"
-  seed: 1
-  from_pretrained: "saved/model_best.pth"
-  dataset_path: "ex.flac"
-model:
-  _target_: src.model.conformer.Conformer
-  num_blocks: 16  # Number of Conformer blocks
-  d_model: 256  # Dimension of model embeddings
-  n_heads: 8  # Number of attention heads
-  kernel_size: 32  # Kernel size for convolution module
-  ff_expansion_factor: 4  # Expansion factor in feed-forward module
-  conv_expansion_factor: 2  # Expansion factor in convolution module
-  dropout: 0.1  # Dropout rate
-  # num_classes: 29  # Number of output classes
-  num_classes: 28
 text_encoder:
   _target_: src.text_encoder.CTCTextEncoder
+  lm_path: 3-gram.pruned.3e-7.arpa
+  unigrams_path: librispeech-vocab.txt
+inferencer:
+  device_tensors: [ "spectrogram", "text_encoded" ] # which tensors should be on device (ex. GPU)
+  device: auto # device name or "auto"
+  save_path: "inference" # any name here, can be a dataset name
+  seed: 42
+  from_pretrained: "checkpoint-epoch200.pth" # path to the pretrained model

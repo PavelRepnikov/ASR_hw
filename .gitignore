@@ -105,10 +105,14 @@ data/
 input/
 saved/
 wandb/
-.cometml-runs/
 outputs/
+deepspeech2/
 
-# editor, os cache directory
-.vscode/
-.idea/
-__MACOSX/
+
+3-gram.pruned.3e-7.arpa
+librispeech-vocab.txt
+
+best_clean_model.pth
+sample_test
+onetest.yaml
+

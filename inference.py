@@ -1,120 +1,76 @@
+import warnings
+
+import hydra
 import torch
-import torchaudio
-from torch import nn
-from src.model.deepspeech import DeepSpeech
-from torchaudio.transforms import Resample
-import heapq
-from tqdm import tqdm
+from hydra.utils import instantiate
+
+from src.datasets.data_utils import get_dataloaders
+from src.trainer import Inferencer
+from src.utils.init_utils import set_random_seed
+from src.utils.io_utils import ROOT_PATH
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
-def from_pretrained(model, pretrained_path, device):
+@hydra.main(version_base=None, config_path="src/configs", config_name="inference")
+def main(config):
     """
-    Initialize model with weights from pretrained pth file.
-    """
-    pretrained_path = str(pretrained_path)
-    if hasattr(model, "logger"):
-        model.logger.info(f"Loading model weights from: {pretrained_path} ...")
-    else:
-        print(f"Loading model weights from: {pretrained_path} ...")
-    checkpoint = torch.load(pretrained_path, map_location=device)
+    Main script for inference. Instantiates the model, metrics, and
+    dataloaders. Runs Inferencer to calculate metrics and (or)
+    save predictions.
 
-    if checkpoint.get("state_dict") is not None:
-        model.load_state_dict(checkpoint["state_dict"], strict=False)
-    else:
-        model.load_state_dict(checkpoint)
-
-def preprocess_audio(audio_path, device, sample_rate=16000):
-    """
-    Preprocesses audio input by loading and converting it to the desired format.
     Args:
-        audio_path (str): Path to the audio file.
-        device (torch.device): Device for computations.
-        sample_rate (int): Target sample rate for the audio.
-    Returns:
-        torch.Tensor: Preprocessed audio tensor.
+        config (DictConfig): hydra experiment config.
     """
-    waveform, sr = torchaudio.load(audio_path)
-    if sr != sample_rate:
-        resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=sample_rate)
-        waveform = resampler(waveform)
-    return waveform.to(device)
+    set_random_seed(config.inferencer.seed)
 
-def infer(model, audio_path, device, beam_width=5):
-    
-    labels = [chr(i) for i in range(28)] 
-    blank_idx = 0
+    if config.inferencer.device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    else:
+        device = config.inferencer.device
 
-    waveform, sample_rate = torchaudio.load(audio_path)
+    # setup text_encoder
+    text_encoder = instantiate(config.text_encoder)
 
-    target_sample_rate = 16000
-    if sample_rate != target_sample_rate:
-        resampler = Resample(orig_freq=sample_rate, new_freq=target_sample_rate)
-        waveform = resampler(waveform)
+    # setup data_loader instances
+    # batch_transforms should be put on device
+    dataloaders, batch_transforms = get_dataloaders(config, text_encoder, device)
 
-    if waveform.dim() == 1:
-        waveform = waveform.unsqueeze(0)
-    waveform = waveform.unsqueeze(0)
+    # build model architecture, then print to console
+    model = instantiate(config.model, n_tokens=len(text_encoder)).to(device)
+    print(model)
 
-    waveform = waveform.to(device)
+    # get metrics
+    metrics = {"inference": []}
+    for metric_config in config.metrics.get("inference", []):
+        # use text_encoder in metrics
+        metrics["inference"].append(
+            instantiate(metric_config, text_encoder=text_encoder)
+        )
 
-    batch = {"audio": waveform}
+    # save_path for model predictions
+    save_path = ROOT_PATH / "data" / "saved" / config.inferencer.save_path
+    save_path.mkdir(exist_ok=True, parents=True)
 
-    model.eval()
-    with torch.no_grad():
-        output = model(**batch)
+    inferencer = Inferencer(
+        model=model,
+        config=config,
+        device=device,
+        dataloaders=dataloaders,
+        text_encoder=text_encoder,
+        batch_transforms=batch_transforms,
+        save_path=save_path,
+        metrics=metrics,
+        skip_model_load=False,
+    )
 
-    log_probs = output["log_probs"]
-    input_lengths = output["log_probs_length"]
+    logs = inferencer.run_inference()
 
-    log_probs = log_probs[0]
-    input_lengths = input_lengths[0]
-
-    beams = [([], 0.0)]
-
-    for t in tqdm(range(input_lengths[0]), desc="Decoding", unit="step"):
-        new_beams = []
-        probs = log_probs[t].cpu().numpy()
-
-        for seq, score in beams:
-            for idx in range(len(probs)):
-                new_seq = seq + [idx]
-                new_score = score + probs[idx]
-                new_beams.append((new_seq, new_score))
-
-        beams = heapq.nlargest(beam_width, new_beams, key=lambda x: x[1])
-
-    best_seq, _ = beams[0]
-
-    transcription = []
-    prev_char = None
-    for idx in best_seq:
-        if idx != blank_idx and (prev_char != idx):
-            transcription.append(labels[idx])
-        prev_char = idx
-
-    print("Transcription:", "".join(transcription))
-
-    return "".join(transcription)
-
-
+    for part in logs.keys():
+        for key, value in logs[part].items():
+            full_key = part + "_" + key
+            print(f"    {full_key:15s}: {value}")
 
 
 if __name__ == "__main__":
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = "cpu"
-    # device = "cuda"
-    model = DeepSpeech(
-        input_dim=80,
-        hidden_dim=256,
-        num_gru_layers=3,
-        num_classes=29,
-        dropout=0.1
-    )
-
-    pretrained_path = "saved/model_best.pth"
-    from_pretrained(model, pretrained_path, device)
-
-    audio_path = "ex.flac"  # Your specific audio file path
-
-    output = infer(model, audio_path, device)
-    # print(f"Transcription: {output}")
+    main()

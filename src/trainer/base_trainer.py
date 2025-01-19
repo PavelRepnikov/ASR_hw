@@ -139,11 +139,16 @@ class BaseTrainer:
         )
 
         if config.trainer.get("resume_from") is not None:
-            resume_path = self.checkpoint_dir / config.trainer.resume_from
+            # resume_path = self.checkpoint_dir / config.trainer.resume_from
+            resume_path = (
+                ROOT_PATH / config.trainer.resume_from
+            )  # чтобы просто надо было указывать путь до файла с конфигом
             self._resume_checkpoint(resume_path)
 
         if config.trainer.get("from_pretrained") is not None:
-            self._from_pretrained(config.trainer.get("from_pretrained"))
+            self._from_pretrained(
+                config.trainer.get("from_pretrained")
+            )  # просто путь до предобученной модели
 
     def train(self):
         """
@@ -172,8 +177,6 @@ class BaseTrainer:
             # save logged information into logs dict
             logs = {"epoch": epoch}
             logs.update(result)
-
-            torch.cuda.empty_cache()  # Clear GPU memory cache
 
             # print logged information to the screen
             for key, value in logs.items():
@@ -210,26 +213,18 @@ class BaseTrainer:
         for batch_idx, batch in enumerate(
             tqdm(self.train_dataloader, desc="train", total=self.epoch_len)
         ):
-            # try:
-            #     # if batch_idx == 0:
-            #         # print("\nBatch Keys:", batch.keys())
-
-            #     batch = self.process_batch(
-            #         batch,
-            #         metrics=self.train_metrics,
-            #     )
-            # except torch.cuda.OutOfMemoryError as e:
-            #     if self.skip_oom:
-            #         self.logger.warning("OOM on batch. Skipping batch.")
-            #         torch.cuda.empty_cache()  # free some memory
-            #         continue
-            #     else:
-            #         raise e
-            batch = self.process_batch(
+            try:
+                batch = self.process_batch(
                     batch,
                     metrics=self.train_metrics,
                 )
-
+            except torch.cuda.OutOfMemoryError as e:
+                if self.skip_oom:
+                    self.logger.warning("OOM on batch. Skipping batch.")
+                    torch.cuda.empty_cache()  # free some memory
+                    continue
+                else:
+                    raise e
 
             self.train_metrics.update("grad_norm", self._get_grad_norm())
 
@@ -250,17 +245,6 @@ class BaseTrainer:
                 # because we are interested in recent train metrics
                 last_train_metrics = self.train_metrics.result()
                 self.train_metrics.reset()
-            
-            # Display CER and WER every 10 batches
-            # if batch_idx % 10 == 0:
-            #     cer = self.train_metrics.result().get("cer", 0)
-            #     wer = self.train_metrics.result().get("wer", 0)
-            #     self.logger.info(
-            #         f"CER: {cer:.6f}, WER: {wer:.6f}"
-            #     )
-
-            torch.cuda.empty_cache()
-            
             if batch_idx + 1 >= self.epoch_len:
                 break
 
@@ -270,7 +254,6 @@ class BaseTrainer:
         for part, dataloader in self.evaluation_dataloaders.items():
             val_logs = self._evaluation_epoch(epoch, part, dataloader)
             logs.update(**{f"{part}_{name}": value for name, value in val_logs.items()})
-        torch.cuda.empty_cache()  # Clear GPU memory cache
 
         return logs
 
@@ -369,10 +352,6 @@ class BaseTrainer:
             batch (dict): dict-based batch containing the data from
                 the dataloader with some of the tensors on the device.
         """
-        # print("Batch keys:", batch.keys())
-        # for key, value in batch.items():
-        #     print(f"Key: {key}, Type: {type(value)}")
-
         for tensor_for_device in self.cfg_trainer.device_tensors:
             batch[tensor_for_device] = batch[tensor_for_device].to(self.device)
         return batch
@@ -395,9 +374,6 @@ class BaseTrainer:
         # do batch transforms on device
         transform_type = "train" if self.is_train else "inference"
         transforms = self.batch_transforms.get(transform_type)
-
-        # print(f"Batch keys: {list(batch.keys())}")
-
         if transforms is not None:
             for transform_name in transforms.keys():
                 batch[transform_name] = transforms[transform_name](
@@ -541,8 +517,8 @@ class BaseTrainer:
                 "Warning: Architecture configuration given in the config file is different from that "
                 "of the checkpoint. This may yield an exception when state_dict is loaded."
             )
-        self.model.load_state_dict(checkpoint["state_dict"], strict=False)
-        # self.model.load_state_dict(checkpoint["state_dict"])
+        self.model.load_state_dict(checkpoint["state_dict"])
+
         # load optimizer state from checkpoint only when optimizer type is not changed.
         if (
             checkpoint["config"]["optimizer"] != self.config["optimizer"]
@@ -580,7 +556,6 @@ class BaseTrainer:
         checkpoint = torch.load(pretrained_path, self.device)
 
         if checkpoint.get("state_dict") is not None:
-            self.model.load_state_dict(checkpoint["state_dict"], strict=False)
-            # print(checkpoint["state_dict"].keys())
+            self.model.load_state_dict(checkpoint["state_dict"])
         else:
             self.model.load_state_dict(checkpoint)

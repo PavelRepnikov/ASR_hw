@@ -1,5 +1,7 @@
 # Automatic Speech Recognition (ASR) with PyTorch
 
+W&B report link: https://wandb.ai/rtfiof-hse-university/ASR_hw/reports/asr-hw-report--VmlldzoxMDk5NjczNA?accessToken=hchakcysarclwf490nirjnvapg1sdgfuwmd3cs0coqfnzy16y4x9uwhekanp4elc
+
 <p align="center">
   <a href="#about">About</a> •
   <a href="#installation">Installation</a> •
@@ -10,25 +12,16 @@
 
 ## About
 
-This repository contains a HW by Repnikov Pavel, an illiterate monkey.
+Automatic Speech Recognition model DeepSpeech2 implemented from scratch in PyTorch. 
+
+This repository contains a project on Automatic Speech Recognition (ASR) with all necessary scripts and instructions for training and infering the model.
 
 ## Installation
 
 Follow these steps to install the project:
 
-0. (Optional) Create and activate new environment using [`conda`](https://conda.io/projects/conda/en/latest/user-guide/getting-started.html) or `venv` ([`+pyenv`](https://github.com/pyenv/pyenv)).
-
-   a. `conda` version:
-
-   ```bash
-   # create env
-   conda create -n project_env python=3.12.8
-
-   # activate env
-   conda activate project_env
-   ```
-
-   b. `venv` (`+pyenv`) version:
+1. (Optional) Create and activate new environment using `venv` ([`+pyenv`](https://github.com/pyenv/pyenv)).
+   `venv` (`+pyenv`) version:
 
    ```bash
    # create env
@@ -41,36 +34,53 @@ Follow these steps to install the project:
    source project_env
    ```
 
-1. Install all required packages
+2. Install all required packages
 
    ```bash
    pip install -r requirements.txt
    ```
 
-2. Download checkpoint:
-   ```bash
-   python3 download_checkpoint.py
-   ```
+## How To Train
 
-## How To Use
+To train a model, log in to wandb and run the following commands:
 
-To train a model, run the following command:
-
+1. First,
+   
 ```bash
-python3 train.py -cn=CONFIG_NAME HYDRA_CONFIG_ARGUMENTS
+python train.py -cn=config-1 
+```
+for 94 epochs
+
+2. Second, train it with
+```bash
+python train.py -cn=config-3
 ```
 
-Where `CONFIG_NAME` is config-5 from `src/configs` and `HYDRA_CONFIG_ARGUMENTS` are optional arguments.
+3. Third,
+```bash
+python train.py -cn=config-4
+```
 
-To run inference (evaluate the model or save predictions):
+Note that paths to the models may differ in your system
+
+# How To Evaluate
+
+1. To download the needed files to eval my model:
 
 ```bash
-python3 inference.py
+python download_checkpoint.py
 ```
+
+2. To run inference:
+
+```bash
+python inference.py -cn=inference
+```
+
 
 ## Credits
 
-This repository is based on https://github.com/Blinorot/pytorch_project_template/tree/example/asr
+This repository is based on a [PyTorch Project Template](https://github.com/Blinorot/pytorch_project_template).
 
 ## License
 

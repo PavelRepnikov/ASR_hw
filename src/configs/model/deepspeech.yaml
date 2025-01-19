@@ -1,7 +1,0 @@
-_target_: src.model.deepspeech.DeepSpeech2
-
-input_dim: 128 #dont change
-hidden_dim: 512
-num_gru_layers: 4
-num_classes: 28
-dropout: 0.1

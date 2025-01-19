@@ -52,7 +52,6 @@ def plot_spectrogram(spectrogram, name=None):
     Returns:
         image (Image): image of the spectrogram
     """
-    spectrogram = spectrogram[0, :, :]
     plt.figure(figsize=(20, 5))
     plt.pcolormesh(spectrogram)
     plt.title(name)

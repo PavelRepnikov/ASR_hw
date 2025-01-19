@@ -48,7 +48,7 @@ class WandBWriter:
                 project=project_name,
                 entity=entity,
                 config=project_config,
-                name=None,
+                name=run_name,
                 resume="allow",  # resume the run if run_id existed
                 id=self.run_id,
                 mode=mode,

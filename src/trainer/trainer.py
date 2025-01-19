@@ -1,7 +1,9 @@
+import random
 from pathlib import Path
 
-import pandas as pd
 import numpy as np
+import pandas as pd
+import torch
 
 from src.logger.utils import plot_spectrogram
 from src.metrics.tracker import MetricTracker
@@ -42,15 +44,6 @@ class Trainer(BaseTrainer):
             self.optimizer.zero_grad()
 
         outputs = self.model(**batch)
-
-        if not isinstance(outputs, dict):
-            raise ValueError(f"Expected model output to be a dictionary, but got {type(outputs)}")
-
-        # Further check if 'log_probs' is in the outputs (adjust based on your model's expected output)
-        if "log_probs" not in outputs:
-            raise KeyError("Expected 'log_probs' key in model output, but it is missing")
-
-
         batch.update(outputs)
 
         all_losses = self.criterion(**batch)
@@ -96,61 +89,100 @@ class Trainer(BaseTrainer):
 
     def log_spectrogram(self, spectrogram, **batch):
         spectrogram_for_plot = spectrogram[0].detach().cpu()
+        # spectrogram_for_plot = torch.log(spectrogram_for_plot + 1e-5) # for beautiful pictures when logging only
         image = plot_spectrogram(spectrogram_for_plot)
         self.writer.add_image("spectrogram", image)
-    
-
 
     def log_predictions(
-        self, text, log_probs, log_probs_length, audio_path, examples_to_log=10, **batch
+        self,
+        text,
+        logits: torch.tensor,
+        log_probs: torch.tensor,
+        log_probs_length: torch.tensor,
+        audio_path,
+        audio: torch.tensor,
+        examples_to_log=5,
+        **batch
     ):
-        # Perform argmax to get predicted indices
-        argmax_inds = log_probs.cpu().argmax(-1).numpy()
+        # TODO add beam search
+        # Note: by improving text encoder and metrics design
+        # this logging can also be improved significantly
 
-        # Ensure log_probs_length is correctly handled as a 1D array of lengths
-        log_probs_length = log_probs_length.cpu().numpy()  # Convert to numpy if it's a tensor
+        # сперва будем выбирать случайные examples_to_log объектов, а потом всё считать
+        indices = random.sample(range(len(text)), min(examples_to_log, len(text)))
 
-        # Safely slice the predictions based on log_probs_length
-        for inds, ind_len in zip(argmax_inds, log_probs_length):
-            # print(f"ind_len type: {type(ind_len)}, value: {ind_len}")  # Debug print
-            # print(f"inds type: {type(inds)}, value: {inds}")  # Debug print
-            
-            # Check if ind_len is an array with multiple elements
-            if isinstance(ind_len, np.ndarray):
-                # If ind_len is an array, process each element individually
-                for length in ind_len:
-                    # Slice each prediction based on its corresponding length
-                    inds = inds[:int(length)]  # Ensure ind_len is used correctly as an integer
-                    # print(f"Sliced inds: {inds}")  # Debug print
-            else:
-                # If it's a scalar, handle it as a single value
-                inds = inds[:int(ind_len)]  # Ensure ind_len is used correctly as an integer
-                # print(f"Sliced inds: {inds}")  # Debug print
+        texts = [text[i] for i in indices]
+        logits = logits[indices].detach().cpu().numpy()
+        log_probas = log_probs[indices].detach().cpu().numpy()
+        log_probs_lengths = log_probs_length[indices].detach().cpu().numpy()
+        audio_paths = [audio_path[i] for i in indices]
+        audios = audio[indices].squeeze().numpy()
 
-        # Decode the predictions
+        argmax_inds = log_probas.argmax(-1)
+        argmax_inds = [
+            inds[: int(ind_len)]
+            for inds, ind_len in zip(argmax_inds, log_probs_lengths)
+        ]
         argmax_texts_raw = [self.text_encoder.decode(inds) for inds in argmax_inds]
         argmax_texts = [self.text_encoder.ctc_decode(inds) for inds in argmax_inds]
-        
-        # Create tuples of predictions, targets, raw predictions, and audio paths
-        tuples = list(zip(argmax_texts, text, argmax_texts_raw, audio_path))
+
+        # CTC bs
+        # bs_texts = [
+        #     self.text_encoder.ctc_beam_search(proba[:length], 3)
+        #     for proba, length in zip(log_probas, log_probs_lengths)
+        # ]
+        # lm_texts = [
+        #     self.text_encoder.lm_ctc_beam_search(logits_vec[:length], 25)
+        #     for logits_vec, length in zip(logits, log_probs_lengths)
+        # ]
+
+        tuples = list(
+            zip(
+                argmax_texts,
+                # bs_texts,
+                # lm_texts,
+                texts,
+                argmax_texts_raw,
+                audio_paths,
+                audios,
+            )
+        )
 
         rows = {}
-        # Log results for the first few examples
-        for pred, target, raw_pred, audio_path in tuples[:examples_to_log]:
+        for (
+            pred_argmax,
+            # pred_bs,
+            # pred_lm,
+            target,
+            raw_pred,
+            audio_path,
+            audio_aug,
+        ) in tuples:
             target = self.text_encoder.normalize_text(target)
-            wer = calc_wer(target, pred) * 100
-            cer = calc_cer(target, pred) * 100
+            wer = calc_wer(target, pred_argmax) * 100
+            cer = calc_cer(target, pred_argmax) * 100
 
-            # Collect results into a dictionary
+            # beam_wer = calc_wer(target, pred_bs) * 100
+            # beam_cer = calc_cer(target, pred_bs) * 100
+
+            # lm_wer = calc_wer(target, pred_lm) * 100
+            # lm_cer = calc_cer(target, pred_lm) * 100
+
             rows[Path(audio_path).name] = {
+                "audio_augmented": self.writer.wandb.Audio(audio_aug, sample_rate=16000),
                 "target": target,
                 "raw prediction": raw_pred,
-                "predictions": pred,
-                "wer": wer,
-                "cer": cer,
+                "predictions": pred_argmax,
+                # "beam_predictions": pred_bs,
+                # "lm_predictions": pred_lm,
+                "wer_argmax": wer,
+                "cer_argmax": cer,
+                # "wer_beam": beam_wer,
+                # "cer_beam": beam_cer,
+                # "wer_lm": lm_wer,
+                # "cer_lm": lm_cer,
             }
-        
-        # Log the table using the writer
+
         self.writer.add_table(
             "predictions", pd.DataFrame.from_dict(rows, orient="index")
         )

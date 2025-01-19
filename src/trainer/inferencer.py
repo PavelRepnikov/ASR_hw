@@ -2,6 +2,7 @@ import torch
 from tqdm.auto import tqdm
 
 from src.metrics.tracker import MetricTracker
+from src.text_encoder import CTCTextEncoder
 from src.trainer.base_trainer import BaseTrainer
 
 
@@ -20,7 +21,7 @@ class Inferencer(BaseTrainer):
         config,
         device,
         dataloaders,
-        text_encoder,
+        text_encoder: CTCTextEncoder,
         save_path,
         metrics=None,
         batch_transforms=None,
@@ -98,7 +99,6 @@ class Inferencer(BaseTrainer):
             part_logs[part] = logs
         return part_logs
 
-
     def process_batch(self, batch_idx, batch, metrics, part):
         """
         Run batch through the model, compute metrics, and
@@ -121,48 +121,51 @@ class Inferencer(BaseTrainer):
                 the dataloader (possibly transformed via batch transform)
                 and model outputs.
         """
-        # Move batch to the appropriate device (e.g., GPU)
-        batch = self.move_batch_to_device(batch)
-        
-        # Transform batch to optimize processing on the device
-        batch = self.transform_batch(batch)
+        # TODO change inference logic so it suits ASR assignment
+        # and task pipeline
 
-        # Run the batch through the ASR model
+        batch = self.move_batch_to_device(batch)
+        batch = self.transform_batch(batch)  # transform batch on device -- faster
+
         outputs = self.model(**batch)
         batch.update(outputs)
 
         if metrics is not None:
-            # Update metrics for the current batch, for inference
             for met in self.metrics["inference"]:
                 metrics.update(met.name, met(**batch))
 
-        # Process the logits for predictions
-        batch_size = batch["logits"].shape[0]
+        # Some saving logic. This is an example
+        # Use if you need to save predictions on disk
+
+        batch_size = batch["log_probs"].shape[0]
         current_id = batch_idx * batch_size
 
         for i in range(batch_size):
-            # Clone logits and labels for each example in the batch
+            # clone because of
+            # https://github.com/pytorch/pytorch/issues/1995
             logits = batch["logits"][i].clone()
-            label = batch["labels"][i].clone()
-
-            # Decode the logits to predicted labels (text transcription)
-            pred_label = self.ctc_decoder(logits)  # Assuming CTC decode is implemented
+            log_probs = batch["log_probs"][i].clone()
+            label = batch["text"][i]
+            length = batch["log_probs_length"][i].clone()
+            # pred_label = logits.argmax(dim=-1)
+            logits_cpu = logits.detach().cpu().numpy()
+            log_probs_cpu = log_probs.detach().cpu().numpy()
+            pred_label = self.text_encoder.ctc_beam_search(log_probs_cpu[:length], 3)
+            pred_lm = self.text_encoder.lm_ctc_beam_search(logits_cpu[:length], 100)
 
             output_id = current_id + i
 
-            # Prepare output with the predicted and true labels
             output = {
                 "pred_label": pred_label,
                 "label": label,
+                "pred_lm": pred_lm
             }
 
-            # Save predictions to disk if save_path is defined
             if self.save_path is not None:
-                # Save output as a .pth file, can use safetensors or other formats
+                # you can use safetensors or other lib here
                 torch.save(output, self.save_path / part / f"output_{output_id}.pth")
 
         return batch
-
 
     def _inference_part(self, part, dataloader):
         """

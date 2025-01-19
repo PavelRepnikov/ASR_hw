@@ -1,0 +1,41 @@
+train:
+  get_spectrogram: # special key for getting spectrogram
+    _target_: torchaudio.transforms.MelSpectrogram
+    sample_rate: 16000
+  audio: # name of the tensor on which we apply transform
+    _target_: src.transforms.RandomTransform
+    transforms:
+      - transform_cfg:
+          _target_: src.transforms.wav_augs.Identity
+        p: 0.6
+      - transform_cfg:
+          _target_: src.transforms.wav_augs.Gain
+          sample_rate: 16000
+        p: 0.1
+      - transform_cfg:
+          _target_: src.transforms.wav_augs.PitchShifting
+          sample_rate: 16000
+          min_transpose_semitones: -2
+          max_transpose_semitones: 2
+        p: 0.1
+      - transform_cfg:
+          _target_: src.transforms.wav_augs.ColoredNoise
+          sample_rate: 16000
+          min_snr_in_db: 5
+          max_snr_in_db: 15
+        p: 0.1
+      - transform_cfg:
+          _target_: src.transforms.wav_augs.SpeedChange
+          sample_rate: 16000
+          speed_factor: 0.8
+        p: 0.05
+      - transform_cfg:
+          _target_: src.transforms.wav_augs.SpeedChange
+          sample_rate: 16000
+          speed_factor: 1.2
+        p: 0.05
+
+inference:
+  get_spectrogram:
+    _target_: torchaudio.transforms.MelSpectrogram
+    sample_rate: 16000

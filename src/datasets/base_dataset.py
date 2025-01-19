@@ -5,7 +5,6 @@ import numpy as np
 import torch
 import torchaudio
 from torch.utils.data import Dataset
-import torchaudio.transforms as T
 
 from src.text_encoder import CTCTextEncoder
 
@@ -85,20 +84,29 @@ class BaseDataset(Dataset):
         text = data_dict["text"]
         text_encoded = self.text_encoder.encode(text)
 
-        spectrogram = self.get_spectrogram(audio)
+        instance_data: dict = {"audio": audio}
+        instance_data = self.preprocess_data(instance_data)  # transforming audio first
 
-        instance_data = {
-            "audio": audio,
-            "spectrogram": spectrogram,
-            "text": text,
-            "text_encoded": text_encoded,
-            "audio_path": audio_path,
-        }
+        spectrogram = self.get_spectrogram(
+            instance_data["audio"]
+        )  # calculating spectrogram of the TRANSFORMED audio
+        spectrogram = torch.log(
+            spectrogram + 1e-5
+        )  # for beautiful pictures when logging
 
-        # think of how to apply wave augs before calculating spectrogram
+        instance_data.update(
+            {
+                "spectrogram": spectrogram,
+                "text": text,
+                "text_encoded": text_encoded,
+                "audio_path": audio_path,
+            }
+        )
+
+        # TODO think of how to apply wave augs before calculating spectrogram
         # Note: you may want to preserve both audio in time domain and
         # in time-frequency domain for logging
-        instance_data = self.preprocess_data(instance_data)
+        # DONE
 
         return instance_data
 
@@ -114,100 +122,7 @@ class BaseDataset(Dataset):
         target_sr = self.target_sr
         if sr != target_sr:
             audio_tensor = torchaudio.functional.resample(audio_tensor, sr, target_sr)
-
-        # Apply augmentations with random chance
-        audio_tensor = self.apply_augmentations(audio_tensor)
-
         return audio_tensor
-
-
-    def apply_augmentations(self, audio_tensor):
-        """
-        Apply augmentations with a random chance.
-        
-        Args:
-            audio_tensor (Tensor): The input audio tensor.
-        Returns:
-            audio_tensor (Tensor): The augmented audio tensor.
-        """
-        audio_tensor = audio_tensor.detach() # Detach to prevent issues with requires_grad
-        
-        augmentations = [
-            lambda x: self.time_stretch(x, rate=random.uniform(0.8, 1.2)),
-            lambda x: self.pitch_shift(x, sample_rate=self.target_sr, n_steps=random.randint(-3, 3)),
-            lambda x: self.add_noise(x, noise_level=random.uniform(0.001, 0.01)),
-            lambda x: self.adjust_volume(x, gain_db=random.uniform(-6, 6)),
-        ]
-
-        # for aug in augmentations:
-        #     if random.random() < 0.5:  # 50% chance to apply each augmentation
-        #         audio_tensor = aug(audio_tensor)
-
-        return audio_tensor
-
-    @staticmethod
-    def time_stretch(audio_tensor, rate=1.1):
-        """
-        Apply time stretching to the audio.
-        Args:
-            audio_tensor (Tensor): The input audio tensor.
-            rate (float): The stretch rate.
-        Returns:
-            Tensor: The time-stretched audio.
-        """
-        # Convert raw audio to a real-valued spectrogram
-        spectrogram_transform = T.Spectrogram(n_fft=400, hop_length=160)
-        spectrogram = spectrogram_transform(audio_tensor)
-
-        # Apply TimeStretch on the spectrogram
-        time_stretch_transform = T.TimeStretch()
-        stretched_spectrogram = time_stretch_transform(spectrogram, rate)
-
-        # Convert the real-valued spectrogram back to audio
-        inverse_transform = T.GriffinLim(n_fft=400, hop_length=160)
-        return inverse_transform(stretched_spectrogram.abs())
-
-
-    @staticmethod
-    def pitch_shift(audio_tensor, sample_rate, n_steps):
-        """
-        Apply pitch shift to the audio tensor.
-        Args:
-            audio_tensor (Tensor): The input audio tensor.
-            sample_rate (int): The sample rate of the audio.
-            n_steps (int): The number of semitones to shift the pitch.
-        Returns:
-            Tensor: The pitch-shifted audio tensor.
-        """
-        pitch_shift_transform = T.PitchShift(sample_rate, n_steps)
-        return pitch_shift_transform(audio_tensor)
-
-    @staticmethod
-    def add_noise(audio_tensor, noise_level=0.005):
-        """
-        Add random noise to the audio.
-        Args:
-            audio_tensor (Tensor): The input audio tensor.
-            noise_level (float): The noise level.
-        Returns:
-            Tensor: The audio with added noise.
-        """
-        noise = noise_level * torch.randn_like(audio_tensor)
-        return audio_tensor + noise
-
-    @staticmethod
-    def adjust_volume(audio_tensor, gain_db=5.0):
-        """
-        Adjust the volume of the audio.
-        Args:
-            audio_tensor (Tensor): The input audio tensor.
-            gain_db (float): Gain in decibels.
-        Returns:
-            Tensor: The volume-adjusted audio.
-        """
-        return T.Vol(gain=gain_db, gain_type="db")(audio_tensor)
-
-
 
     def get_spectrogram(self, audio):
         """
